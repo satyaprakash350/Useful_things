@@ -1,0 +1,212 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Phone Info — Lookup Phone Specifications</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--muted:#94a3b8;--accent:#4f46e5;--glass:rgba(255,255,255,0.03)}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{background:linear-gradient(180deg,#071033 0%, #081229 60%);color:#e6eef8;display:flex;align-items:center;justify-content:center;padding:28px}
+    .container{width:100%;max-width:880px}header{display:flex;align-items:center;gap:16px;margin-bottom:18px}
+.logo{width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,var(--accent),#06b6d4);display:flex;align-items:center;justify-content:center;font-weight:700}
+h1{font-size:20px;margin:0}
+p.lead{margin:4px 0 0;color:var(--muted);font-size:13px}
+
+.card{background:var(--card);border-radius:12px;padding:18px;box-shadow:0 6px 30px rgba(2,6,23,0.6)}
+form{display:flex;gap:10px;align-items:center}
+input[type=text]{flex:1;padding:12px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);background:var(--glass);color:inherit;font-size:15px}
+button{padding:10px 14px;border-radius:10px;border:0;background:linear-gradient(90deg,var(--accent),#06b6d4);color:white;font-weight:600;cursor:pointer}
+button[disabled]{opacity:0.6;cursor:default}
+
+.result{margin-top:16px;display:grid;grid-template-columns:1fr 360px;gap:14px}
+.info{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:14px;border-radius:10px}
+.meta{background:rgba(255,255,255,0.02);padding:12px;border-radius:10px}
+
+.spec-list{list-style:none;padding:0;margin:8px 0 0;max-height:360px;overflow:auto}
+.spec-list li{padding:8px 0;border-bottom:1px dashed rgba(255,255,255,0.02);font-size:14px}
+
+.small{font-size:13px;color:var(--muted)}
+.actions{display:flex;gap:8px;margin-top:8px}
+
+footer{margin-top:14px;color:var(--muted);font-size:13px}
+
+@media (max-width:800px){
+  .result{grid-template-columns:1fr}
+}
+
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">PI</div>
+      <div>
+        <h1>Phone Info</h1>
+        <p class="lead">Enter a phone model or name to fetch specs from the Phone Info API.</p>
+      </div>
+    </header><div class="card">
+  <!--
+    Using Phone Info API (Yabes-Desu Workers)
+    URL: https://api.yabes-desu.workers.dev/tools/phone-info
+    Parameters:
+    - query: Phone model name (required)
+    Example:
+    https://api.yabes-desu.workers.dev/tools/phone-info?query=Poco+F5
+  -->
+
+  <form id="searchForm" onsubmit="return false;">
+    <input id="query" type="text" autocomplete="off" placeholder="e.g. Poco F5, iPhone 13, Galaxy S21" required />
+    <button id="searchBtn" type="submit">Search</button>
+  </form>
+
+  <div id="status" class="small" style="margin-top:10px;color:var(--muted)"></div>
+
+  <div id="resultContainer" class="result" style="display:none">
+    <div class="info">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <h2 id="phoneName" style="margin:0">&nbsp;</h2>
+          <div id="phoneSubtitle" class="small" style="margin-top:6px">&nbsp;</div>
+        </div>
+        <div class="meta" style="text-align:right;min-width:150px">
+          <div id="price" style="font-weight:700"></div>
+          <div class="small" id="releaseDate"></div>
+        </div>
+      </div>
+
+      <h3 style="margin-top:12px;font-size:15px">Key specs</h3>
+      <ul id="keySpecs" class="spec-list"></ul>
+
+      <div class="actions">
+        <button id="copyJson">Copy JSON</button>
+        <button id="downloadJson">Download JSON</button>
+      </div>
+    </div>
+
+    <div class="meta" id="fullSpecs">
+      <h4 style="margin:0 0 8px 0">Full specifications</h4>
+      <div id="specContent" class="small">&nbsp;</div>
+    </div>
+  </div>
+
+  <div id="errorBox" style="display:none;margin-top:12px;color:#ffb4b4;background:rgba(255,50,50,0.04);padding:8px;border-radius:8px"></div>
+
+  <footer>
+    <div>Tip: Press Enter to search. The UI will show name, brand, price, release date and specs if available.</div>
+  </footer>
+</div>
+
+  </div>  <script>
+    const API_BASE = 'https://api.yabes-desu.workers.dev/tools/phone-info';
+
+    const qInput = document.getElementById('query');
+    const searchBtn = document.getElementById('searchBtn');
+    const status = document.getElementById('status');
+    const resultContainer = document.getElementById('resultContainer');
+    const phoneName = document.getElementById('phoneName');
+    const phoneSubtitle = document.getElementById('phoneSubtitle');
+    const priceEl = document.getElementById('price');
+    const releaseDate = document.getElementById('releaseDate');
+    const keySpecs = document.getElementById('keySpecs');
+    const specContent = document.getElementById('specContent');
+    const errorBox = document.getElementById('errorBox');
+    const copyJsonBtn = document.getElementById('copyJson');
+    const downloadJsonBtn = document.getElementById('downloadJson');
+
+    let lastJson = null;
+
+    async function fetchPhone(q){
+      errorBox.style.display = 'none';
+      resultContainer.style.display = 'none';
+      status.textContent = 'Searching for "' + q + '" ...';
+      searchBtn.disabled = true;
+
+      const url = `${API_BASE}?query=${encodeURIComponent(q)}`;
+
+      try{
+        const res = await fetch(url, { method: 'GET' });
+        if(!res.ok){
+          throw new Error('API returned HTTP ' + res.status);
+        }
+        const data = await res.json();
+        lastJson = data;
+        renderResult(data);
+        status.textContent = 'Found results for "' + q + '"';
+      }catch(err){
+        console.error(err);
+        status.textContent = '';
+        errorBox.style.display = 'block';
+        errorBox.textContent = 'Could not fetch phone data — ' + err.message;
+      }finally{
+        searchBtn.disabled = false;
+      }
+    }
+
+    function renderResult(data){
+      const phone = (data && data.phone) || data || {};
+
+      phoneName.textContent = phone.name || phone.model || 'Unknown model';
+      phoneSubtitle.textContent = [phone.brand, phone.model && (phone.model !== phone.name ? phone.model : null)].filter(Boolean).join(' • ');
+      priceEl.textContent = phone.price || '';
+      releaseDate.textContent = phone.release_date || '';
+
+      keySpecs.innerHTML = '';
+      const specs = phone.specs || phone.key_specs || phone.specifications;
+      if(Array.isArray(specs)){
+        specs.slice(0,10).forEach(s => {
+          const li = document.createElement('li'); li.textContent = typeof s === 'string' ? s : JSON.stringify(s);
+          keySpecs.appendChild(li);
+        });
+      } else if(typeof specs === 'object' && specs !== null){
+        Object.entries(specs).slice(0,20).forEach(([k,v]) => {
+          const li = document.createElement('li'); li.textContent = k + ': ' + (typeof v === 'string'? v : JSON.stringify(v));
+          keySpecs.appendChild(li);
+        });
+      } else {
+        const li=document.createElement('li'); li.textContent='No structured key specs found'; keySpecs.appendChild(li);
+      }
+
+      specContent.innerHTML = '';
+      if(specs && typeof specs === 'object'){
+        for(const [section, details] of Object.entries(specs)){
+          const h = document.createElement('div'); h.style.fontWeight='600'; h.style.marginTop='8px'; h.textContent = section;
+          specContent.appendChild(h);
+          const ul = document.createElement('ul'); ul.style.paddingLeft='16px'; ul.style.marginTop='6px';
+          if(typeof details === 'object'){
+            for(const [k,v] of Object.entries(details)){
+              const li = document.createElement('li'); li.textContent = k + ': ' + (typeof v === 'string'? v : JSON.stringify(v)); ul.appendChild(li);
+            }
+          } else {
+            const li = document.createElement('li'); li.textContent = String(details); ul.appendChild(li);
+          }
+          specContent.appendChild(ul);
+        }
+      } else {
+        specContent.textContent = JSON.stringify(phone, null, 2);
+      }
+
+      resultContainer.style.display = 'grid';
+    }
+
+    searchBtn.addEventListener('click', () => {
+      const q = qInput.value.trim(); if(!q) return; fetchPhone(q);
+    });
+
+    qInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') { e.preventDefault(); searchBtn.click(); } });
+
+    copyJsonBtn.addEventListener('click', async () => {
+      if(!lastJson) return; 
+      try{ await navigator.clipboard.writeText(JSON.stringify(lastJson, null, 2)); alert('JSON copied to clipboard'); } catch(e){ alert('Could not copy JSON: ' + e.message); }
+    });
+
+    downloadJsonBtn.addEventListener('click', () => {
+      if(!lastJson) return; 
+      const blob = new Blob([JSON.stringify(lastJson, null, 2)], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = (lastJson.name||'phone') + '-specs.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    });
+
+  </script></body>
+</html>
